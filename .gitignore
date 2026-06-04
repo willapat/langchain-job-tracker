@@ -3,4 +3,6 @@ venv/
 __pycache__/
 jobs.json
 *.db
+*.db-shm
+*.db-wal
 .python-version
