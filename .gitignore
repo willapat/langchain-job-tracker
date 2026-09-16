@@ -6,3 +6,11 @@ jobs.json
 *.db-shm
 *.db-wal
 .python-version
+.langgraph_api/
+.pytest_cache/
+*.egg-info/
+
+# frontend
+web/node_modules/
+web/dist/
+web/.vite/
