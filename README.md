@@ -1,5 +1,7 @@
 # Waypoint
 
+[![CI](https://github.com/willapat/langchain-job-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/willapat/langchain-job-tracker/actions/workflows/ci.yml)
+
 A job application tracker with a LangGraph agent at its center — not bolted on the side. Paste a job posting link or description and the agent fetches it, extracts the structured fields, asks you about anything important it couldn't find, and saves it. Ask it questions about your pipeline. Tell it to delete something and it will ask for your approval first, every time.
 
 ![Waypoint board view](docs/screenshots/board.png)
@@ -72,7 +74,13 @@ flowchart LR
 
 Seven tools (`tools/job_tools.py`): `save_application`, `get_applications`, `update_status`, `delete_application`, `fetch_job_posting` (SSRF-guarded URL fetch), `extract_job_fields` (structured extraction *without* saving — the model decides whether to ask a follow-up before calling `save_application` itself), and `get_pipeline_stats` (exact aggregate numbers for the feedback feature, so the model cites real counts instead of estimating from a raw list).
 
-**One correctness detail worth calling out**, because it silently produces wrong behavior if you get it wrong: `HumanInTheLoopMiddleware`'s reject decision uses the `message` field *verbatim* as the tool's result if you provide one. If your UI passes a bare user-typed reason ("changed my mind") as that message, the model never learns the delete was actually blocked — it only sees an ambiguous string — and can hallucinate "I've deleted it" in its reply. Both the CLI and the web chat panel compose the reject message as `"...tool was NOT executed. Reason given: {reason}"` specifically to avoid this.
+**A few correctness details worth calling out**, because each one silently produced wrong behavior rather than an obvious error:
+
+- `HumanInTheLoopMiddleware`'s reject decision uses the `message` field *verbatim* as the tool's result if you provide one. If your UI passes a bare user-typed reason ("changed my mind") as that message, the model never learns the delete was actually blocked — it only sees an ambiguous string — and can hallucinate "I've deleted it" in its reply. Both the CLI and the web chat panel compose the reject message as `"...tool was NOT executed. Reason given: {reason}"` specifically to avoid this.
+- The board matches an application's status against its five lowercase columns by exact string. The agent sometimes saves a differently-cased status ("Applied" with a capital A) — that write succeeds, the data is fine, it just never matches any column and never renders anywhere on the board. No error, just a card that silently doesn't exist visually. Fixed by normalizing status casing once, in `app/crud.py`, rather than trusting every caller (agent tool or REST) to send it consistently.
+- The chat SSE client parses `event:`/`data:` frames by splitting on `"\n\n"`. The Vite dev proxy rewrites the backend's separators to `"\r\n\r\n"`, which that split never matches — every event was silently dropped, with the request still completing normally underneath. The chat panel just sat on its "thinking" indicator forever for what looked like a slow response but was actually a fully-completed, fully-discarded one. Found by comparing a raw `fetch()` against the same URL (which worked) to the app's own parser (which didn't), then normalizing CRLF to LF before parsing.
+
+Both of the last two only surfaced when actually clicking through the running app, not from staring at the code — a reminder that "the tests pass" and "it works" aren't the same claim.
 
 ## Tech stack
 
@@ -127,6 +135,8 @@ make test
 ```
 
 41 tests covering: CRUD logic and status transitions, the guardrail's allow/deny behavior (including the off-topic-keyword-overlap edge case above), the SSRF validator's IP-range blocklist and JSON-LD-preferring extraction, tool return contracts, and the applications API. Agent responses that require a live Gemini call aren't asserted against in tests — those were verified manually end-to-end (delete → approve → confirmed in SQLite; delete → reject → confirmed *not* deleted; real Greenhouse posting → correct structured extraction).
+
+CI (`.github/workflows/ci.yml`) runs this same suite plus a frontend build on every push and PR. It needs a `GOOGLE_API_KEY` env var to even *import* the backend (building the LangGraph agent constructs a Gemini client at module load time) — CI sets a placeholder since no test actually calls the model.
 
 ## Limitations & honest notes
 
