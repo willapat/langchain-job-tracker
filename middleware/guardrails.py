@@ -10,10 +10,13 @@ class TopicGuardrail(AgentMiddleware):
         "game", "news", "stock", "crypto", "dating", "travel"
     ]
 
+    # Deliberately excludes generic words like "what", "show", or "list" — those
+    # appear in off-topic questions too ("what's the weather?") and would let
+    # them slip past the guardrail regardless of the off-topic keywords below.
     JOB_KEYWORDS = [
         "job", "apply", "application", "resume", "interview", "salary",
         "company", "role", "position", "career", "hire", "status",
-        "delete", "update", "save", "show", "list", "what"
+        "delete", "update", "save"
     ]
 
     @hook_config(can_jump_to=["end"])

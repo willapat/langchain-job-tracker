@@ -1,111 +1,110 @@
-from langchain_core.tools import tool
-from langchain_google_genai import ChatGoogleGenerativeAI
-from pydantic import BaseModel, Field
-from typing import Optional
 import json
-import os
+from typing import Optional
 
-# This is the same schema from before, tools will use this shape
-class JobApplication(BaseModel):
-    company: str = Field(description="The company name")
-    role: str = Field(description="The job title or role")
-    salary: Optional[str] = Field(description="Salary or compensation if mentioned")
-    location: Optional[str] = Field(description="Job location or remote status")
-    requirements: list[str] = Field(description="Key requirements or qualifications")
-    status: str = Field(default="applied", description="Application status")
+from langchain_core.tools import tool
 
-# We'll store jobs in a simple JSON file for now
-JOBS_FILE = "jobs.json"
+from app import crud
+from app.db import session_scope
+from app.services.extract import extract_job
+from app.services.fetcher import FetchError, fetch_job_posting_text
 
-def load_jobs():
-    if not os.path.exists(JOBS_FILE):
-        return []
-    with open(JOBS_FILE, "r") as f:
-        return json.load(f)
 
-def save_jobs(jobs):
-    with open(JOBS_FILE, "w") as f:
-        json.dump(jobs, f, indent=2)
+def _format_application(app) -> dict:
+    return {
+        "id": app.id,
+        "company": app.company,
+        "role": app.role,
+        "salary": app.salary,
+        "location": app.location,
+        "requirements": app.requirements,
+        "status": app.status,
+    }
+
 
 @tool
-def save_application(company: str, role: str, salary: Optional[str] = None, 
-                     location: Optional[str] = None, requirements: list[str] = [], 
-                     status: str = "applied") -> str:
-    """Save a new job application to the tracker."""
-    jobs = load_jobs()
-    
-    job = {
-        "id": len(jobs) + 1,
-        "company": company,
-        "role": role,
-        "salary": salary,
-        "location": location,
-        "requirements": requirements,
-        "status": status
-    }
-    
-    jobs.append(job)
-    save_jobs(jobs)
+def save_application(
+    company: str,
+    role: str,
+    salary: Optional[str] = None,
+    location: Optional[str] = None,
+    requirements: Optional[list[str]] = None,
+    status: str = "applied",
+    source_url: Optional[str] = None,
+) -> str:
+    """Save a new job application to the tracker. Pass source_url when the application
+    came from a job posting link, so the link is kept alongside the saved record."""
+    with session_scope() as session:
+        crud.create_application(
+            session,
+            company=company,
+            role=role,
+            salary=salary,
+            location=location,
+            requirements=requirements or [],
+            status=status,
+            source_url=source_url,
+        )
     return f"Saved application for {role} at {company}"
+
 
 @tool
 def get_applications(status: Optional[str] = None) -> str:
     """Get all job applications, optionally filtered by status."""
-    jobs = load_jobs()
-    
-    if status:
-        jobs = [j for j in jobs if j["status"] == status]
-    
-    if not jobs:
-        return "No applications found"
-    
-    return json.dumps(jobs, indent=2)
+    with session_scope() as session:
+        applications = crud.list_applications(session, status=status)
+        if not applications:
+            return "No applications found"
+        return json.dumps([_format_application(app) for app in applications], indent=2)
+
 
 @tool
 def update_status(company: str, new_status: str) -> str:
     """Update the status of a job application by company name."""
-    jobs = load_jobs()
-    
-    for job in jobs:
-        if job["company"].lower() == company.lower():
-            job["status"] = new_status
-            save_jobs(jobs)
-            return f"Updated {company} status to {new_status}"
-    
-    return f"No application found for {company}"
+    with session_scope() as session:
+        application = crud.update_status_by_company(session, company, new_status)
+    if application is None:
+        return f"No application found for {company}"
+    return f"Updated {company} status to {new_status}"
+
 
 @tool
 def delete_application(company: str) -> str:
     """Delete a job application by company name."""
-    jobs = load_jobs()
-    original_len = len(jobs)
-    jobs = [j for j in jobs if j["company"].lower() != company.lower()]
-    
-    if len(jobs) == original_len:
+    with session_scope() as session:
+        deleted = crud.delete_application_by_company(session, company)
+    if not deleted:
         return f"No application found for {company}"
-    
-    save_jobs(jobs)
     return f"Deleted application for {company}"
 
+
 @tool
-def extract_and_save_job(job_description: str) -> str:
-    """Extract job details from a raw job description and save it automatically."""
-    llm = ChatGoogleGenerativeAI(model="gemini-3.1-flash-lite")
-    structured_llm = llm.with_structured_output(JobApplication)
-    
-    job = structured_llm.invoke(job_description)
-    
-    jobs = load_jobs()
-    job_dict = {
-        "id": len(jobs) + 1,
-        "company": job.company,
-        "role": job.role,
-        "salary": job.salary,
-        "location": job.location,
-        "requirements": job.requirements,
-        "status": job.status
-    }
-    jobs.append(job_dict)
-    save_jobs(jobs)
-    
-    return f"Extracted and saved: {job.role} at {job.company} | Salary: {job.salary} | Location: {job.location}"
+def fetch_job_posting(url: str) -> str:
+    """Fetch a job posting URL and return its readable text, so it can be passed to
+    extract_job_fields. If the page can't be read automatically (e.g. it requires a
+    login, like many LinkedIn or Indeed postings), returns an error message explaining
+    that — ask the user to paste the job description text instead in that case."""
+    try:
+        return fetch_job_posting_text(url)
+    except FetchError as exc:
+        return f"Could not read that page automatically: {exc.message}"
+
+
+@tool
+def extract_job_fields(job_description: str) -> str:
+    """Extract structured job fields (company, role, salary, location, requirements)
+    from raw job-posting text, WITHOUT saving anything. Review the result: if company
+    or role is missing, or an important field like salary or location is missing and
+    the user might know it, ask the user before calling save_application. Only call
+    save_application yourself, once you're satisfied with the fields (asking the user
+    is optional for minor gaps — use judgment)."""
+    job = extract_job(job_description)
+    return json.dumps(
+        {
+            "company": job.company,
+            "role": job.role,
+            "salary": job.salary,
+            "location": job.location,
+            "requirements": job.requirements,
+        },
+        indent=2,
+    )
