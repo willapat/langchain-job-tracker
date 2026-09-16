@@ -79,3 +79,13 @@ def test_fetch_job_posting_returns_error_message_on_blocked_url():
 
     result = fetch_job_posting.invoke({"url": "http://169.254.169.254/latest/meta-data/"})
     assert "Could not read that page" in result
+
+
+def test_get_pipeline_stats_reflects_saved_applications():
+    from tools.job_tools import get_pipeline_stats, save_application
+
+    save_application.invoke({"company": "Acme", "role": "Engineer", "status": "rejected"})
+    save_application.invoke({"company": "Globex", "role": "Engineer", "status": "applied"})
+    stats = json.loads(get_pipeline_stats.invoke({}))
+    assert stats["total"] == 2
+    assert stats["status_counts"]["rejected"] == 1

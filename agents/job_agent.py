@@ -15,6 +15,7 @@ from tools.job_tools import (
     delete_application,
     fetch_job_posting,
     extract_job_fields,
+    get_pipeline_stats,
 )
 from middleware.guardrails import TopicGuardrail
 
@@ -44,9 +45,26 @@ Adding a job from a link or pasted description is a common request and follows t
    question before saving. For minor gaps, use your judgment — you don't need to interrogate
    the user over an unlisted salary.
 4. Call save_application yourself once you're satisfied, passing source_url when you had one,
-   then confirm to the user what was saved (and note anything left blank)."""
+   then confirm to the user what was saved (and note anything left blank).
 
-    tools = [save_application, get_applications, update_status, delete_application, fetch_job_posting, extract_job_fields]
+When asked for feedback or analysis on the user's job search (e.g. "why am I getting rejected
+so much"), call get_pipeline_stats for exact numbers rather than estimating, then call
+get_applications to look for concrete patterns across the actual applications — especially
+rejected ones: do their requirements skew toward a seniority or skill set the user's other
+applications don't share? Is one type of role or company size overrepresented among rejections?
+Give specific, actionable feedback tied to what you actually see (e.g. "3 of your 4 rejections
+list 5+ years of experience — are you a good fit there, or worth targeting slightly more junior
+roles?"), not generic advice like "improve your resume" with nothing to back it up."""
+
+    tools = [
+        save_application,
+        get_applications,
+        update_status,
+        delete_application,
+        fetch_job_posting,
+        extract_job_fields,
+        get_pipeline_stats,
+    ]
 
     kwargs = dict(
         model=MODEL,

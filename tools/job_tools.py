@@ -78,6 +78,16 @@ def delete_application(company: str) -> str:
 
 
 @tool
+def get_pipeline_stats() -> str:
+    """Get aggregate stats about the user's job search: total applications, a count
+    per status, response rate, and interview rate. Use this (instead of manually
+    counting from get_applications) when asked for feedback or analysis of overall
+    progress, so any numbers you cite are exact rather than estimated."""
+    with session_scope() as session:
+        return json.dumps(crud.get_stats(session), indent=2)
+
+
+@tool
 def fetch_job_posting(url: str) -> str:
     """Fetch a job posting URL and return its readable text, so it can be passed to
     extract_job_fields. If the page can't be read automatically (e.g. it requires a
