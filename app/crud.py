@@ -8,10 +8,20 @@ from app.models import Application, Note
 # ---- Applications ----------------------------------------------------------
 
 
+def _normalize_status(status: str) -> str:
+    """Statuses are matched by exact string against the board's five lowercase
+    columns (applied/screening/interview/offer/rejected). Callers — including the
+    agent, which sometimes passes "Applied" with a capital A — aren't guaranteed to
+    send that exact casing, so normalize here rather than at every call site. A
+    value that came in differently-cased would otherwise save successfully but
+    silently match no column and never render anywhere on the board."""
+    return status.strip().lower()
+
+
 def list_applications(session: Session, status: str | None = None) -> list[Application]:
     stmt = select(Application).order_by(Application.created_at.desc())
     if status:
-        stmt = stmt.where(Application.status == status)
+        stmt = stmt.where(Application.status == _normalize_status(status))
     return list(session.scalars(stmt))
 
 
@@ -42,7 +52,7 @@ def create_application(
         salary=salary,
         location=location,
         requirements=requirements or [],
-        status=status,
+        status=_normalize_status(status),
         source_url=source_url,
     )
     if applied_date is not None:
@@ -59,6 +69,8 @@ def update_application(session: Session, application_id: int, **fields) -> Appli
         return None
     for key, value in fields.items():
         if value is not None and hasattr(application, key):
+            if key == "status":
+                value = _normalize_status(value)
             setattr(application, key, value)
     session.flush()
     session.refresh(application)
@@ -69,7 +81,7 @@ def update_status_by_company(session: Session, company: str, new_status: str) ->
     application = get_application_by_company(session, company)
     if application is None:
         return None
-    application.status = new_status
+    application.status = _normalize_status(new_status)
     session.flush()
     session.refresh(application)
     return application

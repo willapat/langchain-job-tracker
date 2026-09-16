@@ -9,6 +9,32 @@ def test_create_and_list_application(session):
     assert apps[0].status == "applied"
 
 
+def test_create_application_normalizes_status_casing(session):
+    # Regression: the agent sometimes passes a differently-cased status (e.g.
+    # "Applied"). The board matches status by exact string against its five
+    # lowercase columns, so an un-normalized value saves successfully but
+    # never renders anywhere — silently invisible, not an error.
+    app = crud.create_application(session, company="Acme", role="Engineer", status="Applied")
+    assert app.status == "applied"
+
+
+def test_update_application_normalizes_status_casing(session):
+    app = crud.create_application(session, company="Acme", role="Engineer")
+    updated = crud.update_application(session, app.id, status="INTERVIEW")
+    assert updated.status == "interview"
+
+
+def test_update_status_by_company_normalizes_casing(session):
+    crud.create_application(session, company="Acme", role="Engineer")
+    updated = crud.update_status_by_company(session, "Acme", "Offer")
+    assert updated.status == "offer"
+
+
+def test_list_applications_filter_normalizes_casing(session):
+    crud.create_application(session, company="Acme", role="Engineer", status="applied")
+    assert len(crud.list_applications(session, status="Applied")) == 1
+
+
 def test_create_application_with_explicit_applied_date(session):
     from datetime import date
 
