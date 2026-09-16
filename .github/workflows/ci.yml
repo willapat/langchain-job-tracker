@@ -8,6 +8,13 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
+    env:
+      # Building the LangGraph agent constructs a ChatGoogleGenerativeAI client at
+      # import time (agents/job_agent.py, for the langgraph-dev entrypoint), which
+      # pydantic-validates that an API key is present even though no test here
+      # actually calls the model. A placeholder satisfies that check; no real
+      # Gemini credentials are needed to run this suite.
+      GOOGLE_API_KEY: ci-placeholder-key
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
