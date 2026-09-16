@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react"
 import type { useChat } from "../../hooks/useChat"
 import { ApprovalCard } from "./ApprovalCard"
+import { MarkdownMessage } from "./MarkdownMessage"
 
 export function ChatPanel({
   chat,
@@ -57,7 +58,13 @@ export function ChatPanel({
                 : "border-border bg-panel text-text"
             }`}
           >
-            {m.content || (m.streaming ? "…" : "")}
+            {m.role === "human" ? (
+              m.content
+            ) : m.content ? (
+              <MarkdownMessage content={m.content} />
+            ) : m.streaming ? (
+              "…"
+            ) : null}
           </div>
         ))}
         {streaming && !messages.some((m) => m.streaming) && (

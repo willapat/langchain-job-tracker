@@ -16,7 +16,7 @@ The interesting design decision is *where* the agent sits. Kanban drag-and-drop 
 - **Agent-powered ingestion** — paste a job posting URL or description into the assistant. It fetches the page (with SSRF-guarded server-side fetching), extracts company/role/salary/location/requirements, and **asks a follow-up question** if something important is missing rather than silently saving nulls.
 - **Chat assistant** — ask about your applications in plain language ("what's in my interview stage?"), update statuses, or delete an application. Responses stream token-by-token over SSE.
 - **Human-in-the-loop deletion** — deleting an application always surfaces an approve/reject card in the chat before anything happens. This is `HumanInTheLoopMiddleware` from LangChain's agent framework, not custom code.
-- **Analytics** — total/active counts, response and interview rates, pipeline breakdown, applications-over-time chart.
+- **Analytics** — total/active counts, response and interview rates, pipeline breakdown, applications-over-time chart, and an "Ask the assistant" button that sends the agent your actual numbers and asks it to find concrete patterns (e.g. rejections clustering around a specific seniority or role type) instead of generic advice.
 - **Notes & interview prep** — a per-application timeline for freeform notes and interview log entries.
 - **Topic guardrail** — the agent refuses off-topic requests ("what's the weather?") and stays on job-tracking.
 - **SQLite persistence** — real schema (`Application`, `Note`) via SQLAlchemy, not a flat JSON file.
@@ -70,7 +70,7 @@ flowchart LR
 3. **`SummarizationMiddleware`** — keeps long conversations from blowing the context window.
 4. **`HumanInTheLoopMiddleware`** — configured with `interrupt_on={"delete_application": True}`, so any call to the delete tool pauses the graph and surfaces an approval request instead of executing.
 
-Six tools (`tools/job_tools.py`): `save_application`, `get_applications`, `update_status`, `delete_application`, `fetch_job_posting` (SSRF-guarded URL fetch), and `extract_job_fields` (structured extraction *without* saving — the model decides whether to ask a follow-up before calling `save_application` itself).
+Seven tools (`tools/job_tools.py`): `save_application`, `get_applications`, `update_status`, `delete_application`, `fetch_job_posting` (SSRF-guarded URL fetch), `extract_job_fields` (structured extraction *without* saving — the model decides whether to ask a follow-up before calling `save_application` itself), and `get_pipeline_stats` (exact aggregate numbers for the feedback feature, so the model cites real counts instead of estimating from a raw list).
 
 **One correctness detail worth calling out**, because it silently produces wrong behavior if you get it wrong: `HumanInTheLoopMiddleware`'s reject decision uses the `message` field *verbatim* as the tool's result if you provide one. If your UI passes a bare user-typed reason ("changed my mind") as that message, the model never learns the delete was actually blocked — it only sees an ambiguous string — and can hallucinate "I've deleted it" in its reply. Both the CLI and the web chat panel compose the reject message as `"...tool was NOT executed. Reason given: {reason}"` specifically to avoid this.
 
@@ -78,7 +78,7 @@ Six tools (`tools/job_tools.py`): `save_application`, `get_applications`, `updat
 
 **Backend:** Python, FastAPI, SQLAlchemy 2.x / SQLite, LangChain + LangGraph, `langchain-google-genai` (Gemini), httpx + BeautifulSoup for ingestion, `sse-starlette` for streaming, pytest.
 
-**Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4, `@dnd-kit` (drag-and-drop), Recharts, React Router.
+**Frontend:** React 19, TypeScript, Vite, Tailwind CSS v4, `@dnd-kit` (drag-and-drop), Recharts, React Router, `react-markdown` (assistant replies render as formatted text, not raw `**`/`###`).
 
 ## Quickstart
 
@@ -126,7 +126,7 @@ There's also `langgraph dev` (via `langgraph.json`) if you want to inspect the g
 make test
 ```
 
-36 tests covering: CRUD logic and status transitions, the guardrail's allow/deny behavior (including the off-topic-keyword-overlap edge case above), the SSRF validator's IP-range blocklist and JSON-LD-preferring extraction, tool return contracts, and the applications API. Agent responses that require a live Gemini call aren't asserted against in tests — those were verified manually end-to-end (delete → approve → confirmed in SQLite; delete → reject → confirmed *not* deleted; real Greenhouse posting → correct structured extraction).
+41 tests covering: CRUD logic and status transitions, the guardrail's allow/deny behavior (including the off-topic-keyword-overlap edge case above), the SSRF validator's IP-range blocklist and JSON-LD-preferring extraction, tool return contracts, and the applications API. Agent responses that require a live Gemini call aren't asserted against in tests — those were verified manually end-to-end (delete → approve → confirmed in SQLite; delete → reject → confirmed *not* deleted; real Greenhouse posting → correct structured extraction).
 
 ## Limitations & honest notes
 

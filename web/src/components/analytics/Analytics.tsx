@@ -93,7 +93,38 @@ function OverTimeChart({ stats }: { stats: Stats }) {
   )
 }
 
-export function Analytics() {
+function feedbackPrompt(stats: Stats): string {
+  const breakdown = STATUSES.map((s) => `${STATUS_LABELS[s]}: ${stats.status_counts[s] ?? 0}`).join(", ")
+  return `Give me feedback on my job search pipeline. Here's a snapshot: ${stats.total} applications total, ` +
+    `${Math.round(stats.response_rate * 100)}% response rate, ${Math.round(stats.interview_rate * 100)}% interview rate. ` +
+    `Status breakdown — ${breakdown}. Pull up my actual saved applications (get_pipeline_stats and get_applications) and ` +
+    `look for concrete patterns, especially among any rejected ones — e.g. a seniority or skill mismatch, an overrepresented ` +
+    `role/company type, or something else you notice. Give me specific, actionable feedback tied to what you actually see, ` +
+    `not generic advice.`
+}
+
+function FeedbackCta({ stats, onAskForFeedback }: { stats: Stats; onAskForFeedback: (message: string) => void }) {
+  return (
+    <div className="flex flex-col items-start gap-3 border border-accent/30 bg-accent/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="label mb-1 text-accent">Assistant feedback</p>
+        <p className="text-sm text-muted">
+          Have the assistant look at your pipeline for patterns — e.g. whether rejections cluster around a
+          requirement you're missing — and suggest what to do next.
+        </p>
+      </div>
+      <button
+        onClick={() => onAskForFeedback(feedbackPrompt(stats))}
+        disabled={stats.total === 0}
+        className="label shrink-0 border border-accent/50 bg-accent/10 px-3 py-2 text-accent transition-all duration-150 active:scale-95 disabled:opacity-40 disabled:active:scale-100"
+      >
+        Ask the assistant
+      </button>
+    </div>
+  )
+}
+
+export function Analytics({ onAskForFeedback }: { onAskForFeedback: (message: string) => void }) {
   const [stats, setStats] = useState<Stats | null>(null)
 
   useEffect(() => {
@@ -112,6 +143,7 @@ export function Analytics() {
         <StatTile label="Response rate" value={`${Math.round(stats.response_rate * 100)}%`} />
         <StatTile label="Interview rate" value={`${Math.round(stats.interview_rate * 100)}%`} />
       </div>
+      <FeedbackCta stats={stats} onAskForFeedback={onAskForFeedback} />
       <StatusBreakdown stats={stats} />
       <div className="border border-border bg-panel p-4">
         <p className="label mb-2">Applications over time</p>
